@@ -4,19 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NutriFit 智慧飲食管理</title>
-  <!-- 引入 React 18 & ReactDOM 18 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- 引入 Babel 用於瀏覽器即時解析 JSX -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin></script>
-  <!-- 引入 Tailwind CSS 輕量級 CDN -->
+  
+  <!-- ==================== APP LOGO 圖示設定 ==================== -->
+  <!-- 1. iPhone/iPad 專用主畫面圖示 (Apple Touch Icon) -->
+  <link rel="apple-touch-icon" href="logo.png">
+  <!-- 2. Android/Chrome 專用主畫面圖示 -->
+  <link rel="icon" type="image/png" sizes="192x192" href="logo.png">
+  <!-- 3. 預設瀏覽器分頁圖示 (Fallback 內置精美綠色沙拉圖標，確保沒上傳圖片時也有質感) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%23059669%22/><text y=%2270%22 x=%2215%22 font-size=%2260%22>🥗</text></svg>">
+  <!-- ========================================================== -->
+
+  <!-- 直接引入網路上的 React, Tailwind 與 Babel (讓瀏覽器能直接解析 JSX) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
     // === 圖標組件 (Inline SVGs 以確保相容性與響應式) ===
     const Icons = {
@@ -78,15 +86,13 @@
       const [activeTab, setActiveTab] = useState('dashboard');
       const [toastMessage, setToastMessage] = useState(null);
       
-      // --- LocalStorage 讀取與寫入優化 (各手機天然隔離) ---
-
-      // 1. 飲食紀錄數據
+      // 飲食紀錄數據 (已完全刪除示範範例)
       const [foodLogs, setFoodLogs] = useState(() => {
         const saved = localStorage.getItem('nutrifit_food_logs');
         return saved ? JSON.parse(saved) : [];
       });
 
-      // 2. 自訂 AI 串接設定狀態
+      // 自訂 AI 串接設定狀態
       const [aiProvider, setAiProvider] = useState(() => {
         return localStorage.getItem('nutrifit_ai_provider') || 'system';
       });
@@ -97,7 +103,7 @@
         return localStorage.getItem('nutrifit_custom_model') || '';
       });
 
-      // 3. 使用者目標與基本資料
+      // 使用者目標與基本資料 (允許為字串以便於刪除編輯不殘留0)
       const [userProfile, setUserProfile] = useState(() => {
         const saved = localStorage.getItem('nutrifit_user_profile');
         return saved ? JSON.parse(saved) : {
@@ -108,14 +114,14 @@
           weight: '76.5',
           targetWeight: '70.0',
           targetWeeks: '8',
-          dailyWaterGoal: 2650,
-          dailyCalorieGoal: 1950,
-          baselineCalories: 2300,
+          dailyWaterGoal: 2650, // 系統自動推算
+          dailyCalorieGoal: 1950, // 系統自動推算
+          baselineCalories: 2300, // 原本維持體重所需卡路里 (TDEE)
           plan: '8週極速體態改造計畫'
         };
       });
 
-      // 4. 水分攝取狀態
+      // 水分攝取狀態 (分離純水與飲料攝取量，初始為 0)
       const [waterIntake, setWaterIntake] = useState(() => {
         const saved = localStorage.getItem('nutrifit_water_intake');
         return saved ? parseInt(saved, 10) : 0;
@@ -125,14 +131,14 @@
         return saved ? parseInt(saved, 10) : 0;
       });
 
-      // 5. 體重歷史
+      // 體重歷史
       const [weightLogs, setWeightLogs] = useState(() => {
         const saved = localStorage.getItem('nutrifit_weight_logs');
         return saved ? JSON.parse(saved) : [];
       });
       const [newWeight, setNewWeight] = useState('');
 
-      // 6. AI 營養師對話紀錄
+      // AI 營養師對話紀錄 (無任何模擬歷史範例，只留基本招呼引導)
       const [chatMessages, setChatMessages] = useState(() => {
         const saved = localStorage.getItem('nutrifit_chat_messages');
         return saved ? JSON.parse(saved) : [
@@ -160,7 +166,7 @@
       const [recipeImage, setRecipeImage] = useState(null);
       const [isRecipeLoading, setIsRecipeLoading] = useState(false);
 
-      // --- 自動同步 LocalStorage 的副作用監聽 (無感存檔) ---
+      // --- 自動同步 LocalStorage ---
       useEffect(() => {
         localStorage.setItem('nutrifit_food_logs', JSON.stringify(foodLogs));
       }, [foodLogs]);
@@ -197,7 +203,7 @@
         localStorage.setItem('nutrifit_chat_messages', JSON.stringify(chatMessages));
       }, [chatMessages]);
 
-      // 初始化時，根據 Profile 自動為體重紀錄表加入第一筆數據
+      // 初始化體重紀錄
       useEffect(() => {
         const weightVal = parseFloat(userProfile.weight);
         if (!isNaN(weightVal) && weightVal > 0 && weightLogs.length === 0) {
@@ -205,7 +211,7 @@
         }
       }, [userProfile.weight]);
 
-      // === 根據年齡、體重、身高、性別、預計達成週數自動計算熱量與水分需求 ===
+      // 根據基本資料自動推算熱量與水分
       useEffect(() => {
         const weightVal = parseFloat(userProfile.weight);
         const heightVal = parseFloat(userProfile.height);
@@ -214,7 +220,6 @@
         const weeksVal = parseFloat(userProfile.targetWeeks);
 
         if (!isNaN(weightVal) && !isNaN(heightVal) && !isNaN(ageVal) && weightVal > 0 && heightVal > 0 && ageVal > 0) {
-          // 1. 基礎代謝 (BMR - Mifflin-St Jeor 公式)
           let bmr = 0;
           if (userProfile.gender === '男') {
             bmr = 10 * weightVal + 6.25 * heightVal - 5 * ageVal + 5;
@@ -222,29 +227,23 @@
             bmr = 10 * weightVal + 6.25 * heightVal - 5 * ageVal - 161;
           }
           
-          // 2. 原本維持體重所需 (TDEE - 假設輕度活動量乘數 1.375)
           const tdee = Math.round((bmr * 1.375) / 50) * 50;
-
-          // 3. 根據目標時間計算每日卡路里配額
           let dailyCalorieGoal = tdee;
           let computedWaterGoal = Math.round((weightVal * 35) / 50) * 50;
 
           if (!isNaN(targetWeightVal) && !isNaN(weeksVal) && weeksVal > 0) {
             const totalDays = weeksVal * 7;
-            const weightDiff = weightVal - targetWeightVal; // 需要減掉的體重 (kg)
+            const weightDiff = weightVal - targetWeightVal;
 
             if (weightDiff > 0) {
-              const totalDeficitNeeded = weightDiff * 7700; // 減去1kg脂肪約需 7700 kcal
+              const totalDeficitNeeded = weightDiff * 7700;
               const dailyDeficit = totalDeficitNeeded / totalDays;
-
-              // 限制每日熱量配額，不低於 BMR 且不低於 1000 kcal（確保人體健康安全底線）
               const rawCalorieGoal = tdee - dailyDeficit;
               const safeCalorieGoal = Math.max(bmr, Math.max(1000, rawCalorieGoal));
               dailyCalorieGoal = Math.round(safeCalorieGoal / 50) * 50;
 
-              // 4. 水分智慧推算：基礎飲水量 + 代謝脂肪所需水分 (每日減重克數 * 2 ml)
               const dailyWeightLossGrams = (weightDiff / totalDays) * 1000;
-              const extraWater = dailyWeightLossGrams * 2; // 1克脂肪分解與廢物排除約需 2ml 水分
+              const extraWater = dailyWeightLossGrams * 2;
               computedWaterGoal = Math.round(((weightVal * 35) + extraWater) / 50) * 50;
             }
           }
@@ -258,13 +257,11 @@
         }
       }, [userProfile.weight, userProfile.height, userProfile.age, userProfile.gender, userProfile.targetWeight, userProfile.targetWeeks]);
 
-      // === 輔助方法：顯示 Toast ===
       const showToast = (msg) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3000);
       };
 
-      // === 運算數值：今日三大營養素與熱量、燈號佔比 ===
       const todayCalories = foodLogs.reduce((sum, item) => sum + item.calories, 0);
       const todayProtein = foodLogs.reduce((sum, item) => sum + item.protein, 0);
       const todayFat = foodLogs.reduce((sum, item) => sum + item.fat, 0);
@@ -283,14 +280,12 @@
 
       const totalWaterIntake = waterIntake + beverageIntake;
       const waterPercent = Math.min(100, Math.round((totalWaterIntake / userProfile.dailyWaterGoal) * 100));
-
       const pureWaterRatio = totalWaterIntake === 0 ? 0 : Math.round((waterIntake / totalWaterIntake) * 100);
       const beverageRatio = totalWaterIntake === 0 ? 0 : Math.round((beverageIntake / totalWaterIntake) * 100);
 
-      // === 核心 AI 串接路由分配器 ===
       const callAI = async (textPrompt, systemInstruction, imageBase64 = null, jsonFormat = false) => {
         if (aiProvider === 'system') {
-          const apiKey = ""; 
+          const apiKey = "";
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
           const parts = [{ text: textPrompt }];
           if (imageBase64) {
@@ -326,7 +321,6 @@
           if (!customApiKey) throw new Error("請先至「個人檔案」輸入您的 Gemini API Key！");
           const modelName = customModel.trim() || "gemini-2.5-flash";
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${customApiKey}`;
-          
           const parts = [{ text: textPrompt }];
           if (imageBase64) {
             const base64Data = imageBase64.split(',')[1] || imageBase64;
@@ -339,20 +333,18 @@
           if (systemInstruction) {
             payload.systemInstruction = { parts: [{ text: systemInstruction }] };
           }
-
           const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          if (!response.ok) throw new Error(`Google API 連線失敗，請確認 API Key 是否正確。`);
+          if (!response.ok) throw new Error("Google API 連線失敗，請檢查 Key 是否正確。");
           const resJson = await response.json();
           return resJson.candidates?.[0]?.content?.parts?.[0]?.text;
         } else if (aiProvider === 'custom-openai') {
           if (!customApiKey) throw new Error("請先至「個人檔案」輸入您的 OpenAI API Key！");
           const modelName = customModel.trim() || "gpt-4o-mini";
           const url = `https://api.openai.com/v1/chat/completions`;
-
           let userContent = textPrompt;
           if (imageBase64) {
             userContent = [
@@ -360,7 +352,6 @@
               { type: "image_url", image_url: { url: imageBase64 } }
             ];
           }
-
           const payload = {
             model: modelName,
             response_format: jsonFormat ? { type: "json_object" } : undefined,
@@ -369,7 +360,6 @@
               { role: "user", content: userContent }
             ]
           };
-
           const response = await fetch(url, {
             method: "POST",
             headers: {
@@ -378,13 +368,12 @@
             },
             body: JSON.stringify(payload)
           });
-          if (!response.ok) throw new Error(`OpenAI API 連線失敗，請確認 API Key 與額度。`);
+          if (!response.ok) throw new Error("OpenAI API 連線失敗，請檢查 Key。");
           const resJson = await response.json();
           return resJson.choices?.[0]?.message?.content;
         }
       };
 
-      // === AI 功能 1: 分析飲食內容 ===
       const handleAnalyzeFood = async () => {
         if (!foodInputText.trim() && !uploadedBase64) {
           showToast('請輸入飲食內容描述或上傳照片喔！');
@@ -466,7 +455,6 @@
         }
       };
 
-      // === AI 功能 2: 營養師對話 ===
       const handleSendMessage = async () => {
         if (!chatInput.trim()) return;
 
@@ -517,7 +505,6 @@ ${currentInput}
         }
       };
 
-      // === AI 功能 3: 生成智慧低卡食譜與配圖 ===
       const handleGenerateRecipe = async () => {
         if (!recipeIngredients.trim()) {
           showToast('請輸入食材，例如：「雞胸肉、豆腐、花椰菜」');
@@ -930,7 +917,7 @@ ${currentInput}
                     <textarea
                       value={foodInputText}
                       onChange={(e) => setFoodInputText(e.target.value)}
-                      placeholder="請輸入你吃了什麼？ (例如：無糖豆漿 400ml、兩顆茶葉蛋，AI將自動計入卡路里與飲水量！)"
+                      placeholder="請輸入你吃了什麼？ (例如：吃了無糖豆漿 400ml、兩顆茶葉蛋，AI將自動計入卡路里與飲水量！)"
                       rows={3}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:outline-none mb-3"
                     ></textarea>
@@ -954,7 +941,7 @@ ${currentInput}
                     <button
                       onClick={handleAnalyzeFood}
                       disabled={analyzingFood}
-                      className={`w-full py-2.5 rounded-xl font-bold text-xs text-white flex items-center justify-center space-x-2 ${analyzingFood ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500'}`}
+                      className={`w-full py-2.5 rounded-xl font-bold text-xs text-white flex items-center justify-center space-x-2 ${analyzingFood ? 'bg-slate-400' : 'bg-emerald-600'}`}
                     >
                       {analyzingFood ? <span>AI 營養師計算中...</span> : <><Icons.Sparkles /><span>開始 AI 分析飲食</span></>}
                     </button>
