@@ -6,25 +6,22 @@
   <title>NutriFit 智慧飲食管理</title>
   
   <!-- ==================== APP LOGO 圖示設定 (加入防快取版本號) ==================== -->
-  <!-- 1. iPhone/iPad 專用主畫面圖示 -->
   <link rel="apple-touch-icon" href="logo.jpg?v=3">
-  <!-- 2. Android/Chrome 專用主畫面圖示 -->
   <link rel="icon" type="image/jpeg" sizes="192x192" href="logo.jpg?v=3">
-  <!-- 3. 預設瀏覽器分頁圖示 -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%23059669%22/><text y=%2270%22 x=%2215%22 font-size=%2260%22>🥗</text></svg>">
   <!-- ========================================================== -->
 
   <!-- 直接引入網路上的 React, Tailwind 與 Babel (讓瀏覽器能直接解析 JSX) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     // === 圖標組件 (Inline SVGs 以確保相容性與響應式) ===
     const Icons = {
@@ -81,15 +78,28 @@
       )
     };
 
+    // === 安全的 LocalStorage 存取工具函數 (防崩潰防白屏) ===
+    const safeSetItem = (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch (e) {
+        console.error(`[LocalStorage 寫入失敗] 可能空間已達上限:`, e);
+      }
+    };
+
     function App() {
       // === 全域狀態控制 ===
       const [activeTab, setActiveTab] = useState('dashboard');
       const [toastMessage, setToastMessage] = useState(null);
       
-      // 飲食紀錄數據 (已完全刪除示範範例)
+      // 飲食紀錄數據
       const [foodLogs, setFoodLogs] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_food_logs');
-        return saved ? JSON.parse(saved) : [];
+        try {
+          const saved = localStorage.getItem('nutrifit_food_logs');
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+          return [];
+        }
       });
 
       // 自訂 AI 串接設定狀態
@@ -103,25 +113,41 @@
         return localStorage.getItem('nutrifit_custom_model') || '';
       });
 
-      // 使用者目標與基本資料 (允許為字串以便於刪除編輯不殘留0)
+      // 使用者目標與基本資料
       const [userProfile, setUserProfile] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_user_profile');
-        return saved ? JSON.parse(saved) : {
-          name: '小明',
-          gender: '男',
-          age: '28',
-          height: '175',
-          weight: '76.5',
-          targetWeight: '70.0',
-          targetWeeks: '8',
-          dailyWaterGoal: 2650, // 系統自動推算
-          dailyCalorieGoal: 1950, // 系統自動推算
-          baselineCalories: 2300, // 原本維持體重所需卡路里 (TDEE)
-          plan: '8週極速體態改造計畫'
-        };
+        try {
+          const saved = localStorage.getItem('nutrifit_user_profile');
+          return saved ? JSON.parse(saved) : {
+            name: '小明',
+            gender: '男',
+            age: '28',
+            height: '175',
+            weight: '76.5',
+            targetWeight: '70.0',
+            targetWeeks: '8',
+            dailyWaterGoal: 2650, 
+            dailyCalorieGoal: 1950, 
+            baselineCalories: 2300, 
+            plan: '8週極速體態改造計畫'
+          };
+        } catch (e) {
+          return {
+            name: '小明',
+            gender: '男',
+            age: '28',
+            height: '175',
+            weight: '76.5',
+            targetWeight: '70.0',
+            targetWeeks: '8',
+            dailyWaterGoal: 2650,
+            dailyCalorieGoal: 1950,
+            baselineCalories: 2300,
+            plan: '8週極速體態改造計畫'
+          };
+        }
       });
 
-      // 水分攝取狀態 (分離純水與飲料攝取量，初始為 0)
+      // 水分攝取狀態
       const [waterIntake, setWaterIntake] = useState(() => {
         const saved = localStorage.getItem('nutrifit_water_intake');
         return saved ? parseInt(saved, 10) : 0;
@@ -133,22 +159,37 @@
 
       // 體重歷史
       const [weightLogs, setWeightLogs] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_weight_logs');
-        return saved ? JSON.parse(saved) : [];
+        try {
+          const saved = localStorage.getItem('nutrifit_weight_logs');
+          return saved ? JSON.parse(saved) : [];
+        } catch(e) {
+          return [];
+        }
       });
       const [newWeight, setNewWeight] = useState('');
 
-      // AI 營養師對話紀錄 (無任何模擬歷史範例，只留基本招呼引導)
+      // AI 營養師對話紀錄
       const [chatMessages, setChatMessages] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_chat_messages');
-        return saved ? JSON.parse(saved) : [
-          {
-            id: 1,
-            sender: 'dietitian',
-            text: '哈囉！我是你的專屬營養師晴晴 🥦 很高興今天能陪你一起記錄飲食！隨時把你的飲食內容寫下來或拍照上傳，我會立刻幫你分析並標上綠、黃、紅三色燈號喔！我們今天一起加油吧！',
-            time: '上午 09:00'
-          }
-        ];
+        try {
+          const saved = localStorage.getItem('nutrifit_chat_messages');
+          return saved ? JSON.parse(saved) : [
+            {
+              id: 1,
+              sender: 'dietitian',
+              text: '哈囉！我是你的專屬營養師晴晴 🥦 很高興今天能陪你一起記錄飲食！隨時把你的飲食內容寫下來或拍照上傳，我會立刻幫你分析並標上綠、黃、紅三色燈號喔！我們今天一起加油吧！',
+              time: '上午 09:00'
+            }
+          ];
+        } catch(e) {
+          return [
+            {
+              id: 1,
+              sender: 'dietitian',
+              text: '哈囉！我是你的專屬營養師晴晴 🥦 很高興今天能陪你一起記錄飲食！隨時把你的飲食內容寫下來或拍照上傳，我會立刻幫你分析並標上綠、黃、紅三色燈號喔！我們今天一起加油吧！',
+              time: '上午 09:00'
+            }
+          ];
+        }
       });
 
       const [chatInput, setChatInput] = useState('');
@@ -168,39 +209,39 @@
 
       // --- 自動同步 LocalStorage ---
       useEffect(() => {
-        localStorage.setItem('nutrifit_food_logs', JSON.stringify(foodLogs));
+        safeSetItem('nutrifit_food_logs', JSON.stringify(foodLogs));
       }, [foodLogs]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_user_profile', JSON.stringify(userProfile));
+        safeSetItem('nutrifit_user_profile', JSON.stringify(userProfile));
       }, [userProfile]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_ai_provider', aiProvider);
+        safeSetItem('nutrifit_ai_provider', aiProvider);
       }, [aiProvider]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_custom_api_key', customApiKey);
+        safeSetItem('nutrifit_custom_api_key', customApiKey);
       }, [customApiKey]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_custom_model', customModel);
+        safeSetItem('nutrifit_custom_model', customModel);
       }, [customModel]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_water_intake', waterIntake.toString());
+        safeSetItem('nutrifit_water_intake', waterIntake.toString());
       }, [waterIntake]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_beverage_intake', beverageIntake.toString());
+        safeSetItem('nutrifit_beverage_intake', beverageIntake.toString());
       }, [beverageIntake]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_weight_logs', JSON.stringify(weightLogs));
+        safeSetItem('nutrifit_weight_logs', JSON.stringify(weightLogs));
       }, [weightLogs]);
 
       useEffect(() => {
-        localStorage.setItem('nutrifit_chat_messages', JSON.stringify(chatMessages));
+        safeSetItem('nutrifit_chat_messages', JSON.stringify(chatMessages));
       }, [chatMessages]);
 
       // 初始化體重紀錄
@@ -259,7 +300,7 @@
 
       const showToast = (msg) => {
         setToastMessage(msg);
-        setTimeout(() => setToastMessage(null), 3000);
+        setTimeout(() => setToastMessage(null), 8000); 
       };
 
       const todayCalories = foodLogs.reduce((sum, item) => sum + item.calories, 0);
@@ -283,9 +324,14 @@
       const pureWaterRatio = totalWaterIntake === 0 ? 0 : Math.round((waterIntake / totalWaterIntake) * 100);
       const beverageRatio = totalWaterIntake === 0 ? 0 : Math.round((beverageIntake / totalWaterIntake) * 100);
 
+      // === 核心 AI 串接路由分配器 ===
       const callAI = async (textPrompt, systemInstruction, imageBase64 = null, jsonFormat = false) => {
         if (aiProvider === 'system') {
           const apiKey = "";
+          if (!apiKey) {
+            throw new Error("偵測到系統預設金鑰未設定。由於您已將網站部署至 GitHub Pages，請前往右下角「個人檔案」➔ 切換為「自訂 Gemini API Key (Google)」並貼上您的專屬 API Key，即可成功開始使用 AI 分析與諮詢功能喔！");
+          }
+
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
           const parts = [{ text: textPrompt }];
           if (imageBase64) {
@@ -319,8 +365,10 @@
           }
         } else if (aiProvider === 'custom-gemini') {
           if (!customApiKey) throw new Error("請先至「個人檔案」輸入您的 Gemini API Key！");
-          const modelName = customModel.trim() || "gemini-2.5-flash";
+          
+          const modelName = customModel.trim() || "gemini-1.5-flash";
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${customApiKey}`;
+          
           const parts = [{ text: textPrompt }];
           if (imageBase64) {
             const base64Data = imageBase64.split(',')[1] || imageBase64;
@@ -333,12 +381,28 @@
           if (systemInstruction) {
             payload.systemInstruction = { parts: [{ text: systemInstruction }] };
           }
+
           const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          if (!response.ok) throw new Error("Google API 連線失敗，請檢查 Key 是否正確。");
+          
+          if (!response.ok) {
+            let detail = `狀態碼 ${response.status}`;
+            try {
+              const errJson = await response.json();
+              if (errJson?.error?.message) {
+                detail = errJson.error.message;
+              }
+            } catch(e) {}
+            
+            if (detail.includes("API keys are not enabled") || detail.includes("has not been used in project")) {
+              throw new Error(`Google API 未啟用！請前往網頁啟用：https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=${detail.split('project')[1]?.split(' ')[0]?.replace('=','') || '您的專案'}`);
+            }
+            throw new Error(`Google API 連線失敗: ${detail}`);
+          }
+          
           const resJson = await response.json();
           return resJson.candidates?.[0]?.content?.parts?.[0]?.text;
         } else if (aiProvider === 'custom-openai') {
@@ -368,7 +432,18 @@
             },
             body: JSON.stringify(payload)
           });
-          if (!response.ok) throw new Error("OpenAI API 連線失敗，請檢查 Key。");
+          
+          if (!response.ok) {
+            let detail = `狀態碼 ${response.status}`;
+            try {
+              const errJson = await response.json();
+              if (errJson?.error?.message) {
+                detail = errJson.error.message;
+              }
+            } catch(e) {}
+            throw new Error(`OpenAI API 錯誤: ${detail}`);
+          }
+          
           const resJson = await response.json();
           return resJson.choices?.[0]?.message?.content;
         }
@@ -603,13 +678,45 @@ ${currentInput}
         }
       };
 
+      // === 核心優化：前端 HTML5 Canvas 圖片動態無損壓縮演算法 ===
       const handleImageChange = (e) => {
         const file = e.target.files[0];
         if (file) {
           const reader = new FileReader();
-          reader.onloadend = () => {
-            setUploadedBase64(reader.result);
-            showToast('相片載入成功！點擊「開始 AI 分析飲食」即可發送。');
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              // 設定圖片最大解析度邊長為 800px (最佳 AI 辨識且極省記憶體之平衡尺寸)
+              const MAX_WIDTH = 800;
+              const MAX_HEIGHT = 800;
+              let width = img.width;
+              let height = img.height;
+
+              if (width > height) {
+                if (width > MAX_WIDTH) {
+                  height *= MAX_WIDTH / width;
+                  width = MAX_WIDTH;
+                }
+              } else {
+                if (height > MAX_HEIGHT) {
+                  width *= MAX_HEIGHT / height;
+                  height = MAX_HEIGHT;
+                }
+              }
+
+              // 利用隱形畫布進行重繪與 JPEG 壓縮
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+
+              // 壓縮並輸出成輕量化 70% 品質 JPEG Base64
+              const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+              setUploadedBase64(compressedBase64);
+              showToast('相片載入並智慧壓縮完成！點擊「開始 AI 分析飲食」即可發送 🥦');
+            };
+            img.src = event.target.result;
           };
           reader.readAsDataURL(file);
         }
@@ -690,7 +797,7 @@ ${currentInput}
 
             {/* === Toast === */}
             {toastMessage && (
-              <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-slate-800 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg border border-slate-700 animate-bounce">
+              <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 bg-slate-800/95 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-xl border border-slate-700 max-w-[90%] text-center leading-relaxed">
                 {toastMessage}
               </div>
             )}
@@ -928,7 +1035,7 @@ ${currentInput}
                         <span>上傳食物相片</span>
                         <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                       </label>
-                      {uploadedBase64 && <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-full">✓ 已載入照片</span>}
+                      {uploadedBase64 && <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-full">✓ 已壓縮載入</span>}
                     </div>
 
                     {uploadedBase64 && (
@@ -1203,7 +1310,7 @@ ${currentInput}
                           onChange={(e) => {
                             setAiProvider(e.target.value);
                             if (e.target.value === 'system') setCustomModel('');
-                            else if (e.target.value === 'custom-gemini') setCustomModel('gemini-2.5-flash');
+                            else if (e.target.value === 'custom-gemini') setCustomModel('gemini-1.5-flash');
                             else if (e.target.value === 'custom-openai') setCustomModel('gpt-4o-mini');
                           }}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none mt-1"
@@ -1230,7 +1337,7 @@ ${currentInput}
                             <label className="text-xs text-slate-500 font-bold">自訂模型名稱 (可選)</label>
                             <input
                               type="text"
-                              placeholder={aiProvider === 'custom-gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini'}
+                              placeholder={aiProvider === 'custom-gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini'}
                               value={customModel}
                               onChange={(e) => setCustomModel(e.target.value)}
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none mt-1"
