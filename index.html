@@ -87,10 +87,19 @@
       }
     };
 
+    // 取得當地 YYYY-MM-DD 日期字串
+    const getLocalDateString = (date = new Date()) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     function App() {
       // === 全域狀態控制 ===
       const [activeTab, setActiveTab] = useState('dashboard');
       const [toastMessage, setToastMessage] = useState(null);
+      const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
       
       // 飲食紀錄數據
       const [foodLogs, setFoodLogs] = useState(() => {
@@ -147,14 +156,27 @@
         }
       });
 
-      // 水分攝取狀態
-      const [waterIntake, setWaterIntake] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_water_intake');
-        return saved ? parseInt(saved, 10) : 0;
-      });
-      const [beverageIntake, setBeverageIntake] = useState(() => {
-        const saved = localStorage.getItem('nutrifit_beverage_intake');
-        return saved ? parseInt(saved, 10) : 0;
+      // 每日水份攝取狀態 (改為日期關聯結構，防止切換日期時水量重疊)
+      const [dailyWater, setDailyWater] = useState(() => {
+        try {
+          const saved = localStorage.getItem('nutrifit_daily_water');
+          if (saved) return JSON.parse(saved);
+          
+          // 向上相容：載入原有單日設定並初始化
+          const legacyWater = localStorage.getItem('nutrifit_water_intake');
+          const legacyBeverage = localStorage.getItem('nutrifit_beverage_intake');
+          const todayKey = getLocalDateString();
+          const initial = {};
+          if (legacyWater || legacyBeverage) {
+            initial[todayKey] = {
+              water: legacyWater ? parseInt(legacyWater, 10) : 0,
+              beverage: legacyBeverage ? parseInt(legacyBeverage, 10) : 0
+            };
+          }
+          return initial;
+        } catch (e) {
+          return {};
+        }
       });
 
       // 體重歷史
@@ -235,12 +257,8 @@
       }, [customModel]);
 
       useEffect(() => {
-        safeSetItem('nutrifit_water_intake', waterIntake.toString());
-      }, [waterIntake]);
-
-      useEffect(() => {
-        safeSetItem('nutrifit_beverage_intake', beverageIntake.toString());
-      }, [beverageIntake]);
+        safeSetItem('nutrifit_daily_water', JSON.stringify(dailyWater));
+      }, [dailyWater]);
 
       useEffect(() => {
         safeSetItem('nutrifit_weight_logs', JSON.stringify(weightLogs));
@@ -309,21 +327,38 @@
         setTimeout(() => setToastMessage(null), 8000); 
       };
 
-      const todayCalories = foodLogs.reduce((sum, item) => sum + item.calories, 0);
-      const todayProtein = foodLogs.reduce((sum, item) => sum + item.protein, 0);
-      const todayFat = foodLogs.reduce((sum, item) => sum + item.fat, 0);
-      const todayCarbs = foodLogs.reduce((sum, item) => sum + item.carbs, 0);
+      // 取得特定日誌的日期標籤 (相容舊版無 date 欄位的日誌)
+      const getLogDate = (log) => {
+        if (log.date) return log.date;
+        try {
+          return getLocalDateString(new Date(log.id));
+        } catch (e) {
+          return getLocalDateString();
+        }
+      };
 
-      const totalItemsCount = foodLogs.reduce((sum, item) => {
+      // 依選定日期過濾後的飲食紀錄
+      const activeLogs = foodLogs.filter(log => getLogDate(log) === selectedDate);
+
+      const todayCalories = activeLogs.reduce((sum, item) => sum + item.calories, 0);
+      const todayProtein = activeLogs.reduce((sum, item) => sum + item.protein, 0);
+      const todayFat = activeLogs.reduce((sum, item) => sum + item.fat, 0);
+      const todayCarbs = activeLogs.reduce((sum, item) => sum + item.carbs, 0);
+
+      const totalItemsCount = activeLogs.reduce((sum, item) => {
         return sum + (item.greenLights?.length || 0) + (item.yellowLights?.length || 0) + (item.redLights?.length || 0);
       }, 0);
-      const greenCount = foodLogs.reduce((sum, item) => sum + (item.greenLights?.length || 0), 0);
-      const yellowCount = foodLogs.reduce((sum, item) => sum + (item.yellowLights?.length || 0), 0);
-      const redCount = foodLogs.reduce((sum, item) => sum + (item.redLights?.length || 0), 0);
+      const greenCount = activeLogs.reduce((sum, item) => sum + (item.greenLights?.length || 0), 0);
+      const yellowCount = activeLogs.reduce((sum, item) => sum + (item.yellowLights?.length || 0), 0);
+      const redCount = activeLogs.reduce((sum, item) => sum + (item.redLights?.length || 0), 0);
 
       const greenPercent = totalItemsCount > 0 ? Math.round((greenCount / totalItemsCount) * 100) : 50;
       const yellowPercent = totalItemsCount > 0 ? Math.round((yellowCount / totalItemsCount) * 100) : 30;
       const redPercent = totalItemsCount > 0 ? Math.round((redCount / totalItemsCount) * 100) : 20;
+
+      // 當日水份攝取數據計算
+      const waterIntake = dailyWater[selectedDate]?.water || 0;
+      const beverageIntake = dailyWater[selectedDate]?.beverage || 0;
 
       const totalWaterIntake = waterIntake + beverageIntake;
       const waterPercent = Math.min(100, Math.round((totalWaterIntake / userProfile.dailyWaterGoal) * 100));
@@ -489,6 +524,7 @@
 
           const newLog = {
             id: Date.now(),
+            date: selectedDate, // 保存記錄的當前選擇日期
             mealType: mealTypeSelect,
             time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
             foodName: parsedData.foodName || foodInputText,
@@ -509,12 +545,19 @@
           showToast('飲食紀錄成功，營養師已為您分類三色燈號！');
 
           if (newLog.liquidMl > 0) {
-            if (newLog.liquidType === 'water') {
-              setWaterIntake(prev => Math.min(prev + newLog.liquidMl, 5000));
-              showToast(`已自動計入白開水 +${newLog.liquidMl}ml！💧`);
-            } else if (newLog.liquidType === 'beverage') {
-              setBeverageIntake(prev => Math.min(prev + newLog.liquidMl, 5000));
-              showToast(`已自動計入飲料/湯水 +${newLog.liquidMl}ml！🍹`);
+            const lType = newLog.liquidType === 'water' ? 'water' : (newLog.liquidType === 'beverage' ? 'beverage' : null);
+            if (lType) {
+              setDailyWater(prev => {
+                const current = prev[selectedDate] || { water: 0, beverage: 0 };
+                return {
+                  ...prev,
+                  [selectedDate]: {
+                    ...current,
+                    [lType]: Math.min((current[lType] || 0) + newLog.liquidMl, 5000)
+                  }
+                };
+              });
+              showToast(`已自動計入${lType === 'water' ? '白開水' : '飲料/湯水'} +${newLog.liquidMl}ml！💧`);
             }
           }
           
@@ -553,7 +596,7 @@
 
         try {
           const historyContext = chatMessages.slice(-6).map(m => `${m.sender === 'user' ? '使用者' : '營養師晴晴'}: ${m.text}`).join('\n');
-          const todayStatus = `今日累計攝取：熱量 ${todayCalories} kcal (目標 ${userProfile.dailyCalorieGoal}), 蛋白質 ${todayProtein}g, 脂肪 ${todayFat}g, 碳水 ${todayCarbs}g。今日喝水量：${totalWaterIntake} ml (白開水 ${waterIntake} ml, 飲料 ${beverageIntake} ml)。目前體重：${userProfile.weight}kg，目標體重：${userProfile.targetWeight}kg。`;
+          const todayStatus = `目前日期：${selectedDate}。該日累計攝取：熱量 ${todayCalories} kcal (目標 ${userProfile.dailyCalorieGoal}), 蛋白質 ${todayProtein}g, 脂肪 ${todayFat}g, 碳水 ${todayCarbs}g。當日喝水量：${totalWaterIntake} ml (白開水 ${waterIntake} ml, 飲料 ${beverageIntake} ml)。目前體重：${userProfile.weight}kg，目標體重：${userProfile.targetWeight}kg。`;
 
           const prompt = `你是 Cofit 專屬營養師「晴晴」。請依據使用者的問題，結合他的健康目標和今日狀態，給予最暖心、專業、具體的飲食建議。
 【今日狀態與目標】
@@ -745,12 +788,16 @@ ${currentInput}
           showToast('請輸入有效的體重數值！');
           return;
         }
-        const todayStr = new Date().toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' }).replace('/', '-');
-        const updatedLogs = [...weightLogs, { id: Date.now(), date: todayStr, weight: parseFloat(newWeight) }];
+        
+        // 將體重紀錄與當前所選日期綁定 (顯示月-日)
+        const dateParts = selectedDate.split('-');
+        const formattedDate = dateParts.length === 3 ? `${dateParts[1]}-${dateParts[2]}` : '今日';
+
+        const updatedLogs = [...weightLogs, { id: Date.now(), date: formattedDate, weight: parseFloat(newWeight) }];
         setWeightLogs(updatedLogs);
         setUserProfile({ ...userProfile, weight: parseFloat(newWeight) });
         setNewWeight('');
-        showToast(`成功記錄體重：${newWeight} kg！加油，離目標又近了一步。`);
+        showToast(`成功記錄 ${selectedDate} 體重：${newWeight} kg！加油，離目標又近了一步。`);
       };
 
       const handleDeleteWeight = (id) => {
@@ -769,23 +816,29 @@ ${currentInput}
       };
 
       const handleAddWater = (amount, type = 'water') => {
-        if (type === 'water') {
-          setWaterIntake(prev => Math.min(prev + amount, 5000));
-          showToast(`補白開水 +${amount}ml！💧`);
-        } else {
-          setBeverageIntake(prev => Math.min(prev + amount, 5000));
-          showToast(`喝飲料/湯水 +${amount}ml！🍹`);
-        }
+        setDailyWater(prev => {
+          const current = prev[selectedDate] || { water: 0, beverage: 0 };
+          return {
+            ...prev,
+            [selectedDate]: {
+              ...current,
+              [type]: Math.min((current[type] || 0) + amount, 5000)
+            }
+          };
+        });
+        showToast(`補${type === 'water' ? '白開水' : '飲料/湯水'} +${amount}ml！💧`);
       };
 
       const handleResetWater = () => {
-        setWaterIntake(0);
-        setBeverageIntake(0);
-        showToast('今天水分與飲料攝取量已成功歸零重置！💧');
+        setDailyWater(prev => ({
+          ...prev,
+          [selectedDate]: { water: 0, beverage: 0 }
+        }));
+        showToast('該日水分與飲料攝取量已成功歸零重置！💧');
       };
 
       return (
-        <div className="min-h-screen bg-slate-50 flex justify-center text-slate-800 antialiased font-sans">
+        <div className="min-h-screen bg-slate-50 flex justify-center text-slate-800 antialiased font-sans overflow-hidden">
           <style>{`
             @keyframes wave-scroll {
               0% { transform: translateX(0); }
@@ -794,12 +847,21 @@ ${currentInput}
             .animate-wave-scroll {
               animation: wave-scroll 2.5s linear infinite;
             }
+            /* 隱藏滾動條以提升美觀性 */
+            .scrollbar-none::-webkit-scrollbar {
+              display: none;
+            }
+            .scrollbar-none {
+              -ms-overflow-style: none;
+              scrollbar-width: none;
+            }
           `}</style>
 
-          <div className="w-full max-w-md bg-white shadow-xl min-h-screen flex flex-col relative pb-20 border-x border-slate-100">
+          {/* 固定高度為 h-screen 並限制內部滾動，確保底部導覽條始終固定在視窗最下方，不需要滑動即可切換 */}
+          <div className="w-full max-w-md bg-white shadow-xl h-screen flex flex-col relative border-x border-slate-100 overflow-hidden">
             
             {/* === 頂部導覽列 === */}
-            <header className="bg-emerald-600 text-white px-4 py-4 sticky top-0 z-40 shadow-md">
+            <header className="bg-emerald-600 text-white px-4 py-4 sticky top-0 z-40 shadow-md flex-shrink-0">
               <div className="flex justify-between items-center">
                 <div>
                   <span className="text-xs font-bold uppercase tracking-widest bg-emerald-700 text-emerald-100 px-2 py-0.5 rounded">COFIT LITE AI</span>
@@ -820,8 +882,8 @@ ${currentInput}
               </div>
             )}
 
-            {/* === 主要內容 === */}
-            <main className="flex-1 p-4 overflow-y-auto">
+            {/* === 主要內容 (支援垂直滾動，底部加入 pb-24 防止導覽條遮擋) === */}
+            <main className="flex-1 p-4 overflow-y-auto pb-24 scrollbar-none">
 
               {/* 1. Dashboard */}
               {activeTab === 'dashboard' && (
@@ -852,9 +914,9 @@ ${currentInput}
                   <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
                     <h3 className="text-sm font-bold text-slate-500 mb-2 flex items-center">
                       <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full mr-2"></span>
-                      今日飲食「綠黃紅」燈號佔比
+                      今日飲食「綠黃紅」燈號佔比 ({selectedDate})
                     </h3>
-                    {foodLogs.length === 0 ? (
+                    {activeLogs.length === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-4">今天尚未記錄餐食，分析後將呈現燈號佔比</p>
                     ) : (
                       <>
@@ -881,13 +943,13 @@ ${currentInput}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
                       <div>
-                        <h4 className="text-xs text-slate-400 font-bold">今日卡路里計畫</h4>
+                        <h4 className="text-xs text-slate-400 font-bold">每日卡路里計畫</h4>
                         <div className="mt-1.5 space-y-1">
                           <p className="text-[10px] text-slate-500 leading-none">
-                            維持體重原本需 (TDEE): <span className="font-bold text-slate-700">{userProfile.baselineCalories} kcal</span>
+                            TDEE: <span className="font-bold text-slate-700">{userProfile.baselineCalories} kcal</span>
                           </p>
                           <p className="text-xs text-emerald-600 font-semibold leading-none">
-                            減脂新目標 ({userProfile.targetWeeks || 0} 週): <span className="font-bold">{userProfile.dailyCalorieGoal} kcal</span>
+                            減脂目標: <span className="font-bold">{userProfile.dailyCalorieGoal} kcal</span>
                           </p>
                           <div className="pt-1.5 border-t border-slate-100">
                             <p className="text-lg font-black text-slate-800">
@@ -958,7 +1020,7 @@ ${currentInput}
                             </button>
                           </div>
                           <button onClick={handleResetWater} className="bg-rose-50 hover:bg-rose-100 active:scale-95 transition text-rose-600 text-[8px] py-0.5 rounded font-bold border border-rose-100 w-full">
-                            重置飲水量
+                            重置水量
                           </button>
                         </div>
                       </div>
@@ -1021,10 +1083,44 @@ ${currentInput}
               {/* 2. Food Log */}
               {activeTab === 'food' && (
                 <div className="space-y-4">
+                  
+                  {/* === 日期選擇與切換控制列 (僅顯示於飲食日記分頁中最上方) === */}
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-2.5 flex items-center justify-between text-xs">
+                    <button 
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() - 1);
+                        setSelectedDate(getLocalDateString(d));
+                      }}
+                      className="bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95 flex items-center space-x-1"
+                    >
+                      <span>◀</span><span>前一天</span>
+                    </button>
+                    <div className="flex items-center space-x-1 font-bold text-emerald-950">
+                      <span>📅</span>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="bg-white border border-emerald-200 rounded-xl px-2 py-1 text-xs focus:outline-none font-bold text-slate-700"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() + 1);
+                        setSelectedDate(getLocalDateString(d));
+                      }}
+                      className="bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95 flex items-center space-x-1"
+                    >
+                      <span>後一天</span><span>▶</span>
+                    </button>
+                  </div>
+
                   <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
                     <div className="flex items-center space-x-2 mb-3">
                       <Icons.Sparkles />
-                      <h3 className="text-sm font-extrabold text-slate-800">AI 智能分析拍照飲食</h3>
+                      <h3 className="text-sm font-extrabold text-slate-800">AI 智能分析拍照飲食 ({selectedDate})</h3>
                     </div>
 
                     <div className="grid grid-cols-4 gap-1 mb-3">
@@ -1042,7 +1138,7 @@ ${currentInput}
                     <textarea
                       value={foodInputText}
                       onChange={(e) => setFoodInputText(e.target.value)}
-                      placeholder="請輸入你吃了什麼？ (例如：吃了無糖豆漿 400ml、兩顆茶葉蛋，AI將自動計入卡路里與飲水量！)"
+                      placeholder="請輸入你吃了什麼？ (例如：吃了無糖豆漿 400ml、兩顆茶葉蛋，AI將自動計入卡路里與當天飲水量！)"
                       rows={3}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:outline-none mb-3"
                     ></textarea>
@@ -1073,13 +1169,13 @@ ${currentInput}
                   </div>
 
                   <div className="space-y-3">
-                    <h3 className="text-sm font-extrabold text-slate-700 px-1">📋 今日飲食日記</h3>
-                    {foodLogs.length === 0 ? (
+                    <h3 className="text-sm font-extrabold text-slate-700 px-1">📋 {selectedDate} 飲食日記</h3>
+                    {activeLogs.length === 0 ? (
                       <div className="bg-white rounded-2xl p-8 text-center text-slate-400 border border-slate-100">
-                        <p className="text-sm">今日還沒有飲食紀錄唷！快在上方記錄第一餐吧 💪</p>
+                        <p className="text-sm">此日期還沒有飲食紀錄唷！快在上方記錄當天的第一餐吧 💪</p>
                       </div>
                     ) : (
-                      foodLogs.map((log) => (
+                      activeLogs.map((log) => (
                         <div key={log.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
                           <div className="flex justify-between items-start">
                             <div>
@@ -1122,8 +1218,8 @@ ${currentInput}
 
               {/* 3. AI Dietitian */}
               {activeTab === 'chat' && (
-                <div className="flex flex-col h-[75vh]">
-                  <div className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100 flex items-center space-x-3 mb-3">
+                <div className="flex flex-col h-[70vh]">
+                  <div className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100 flex items-center space-x-3 mb-3 flex-shrink-0">
                     <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center font-extrabold text-xl">晴</div>
                     <div>
                       <h3 className="text-sm font-bold text-slate-800">專屬營養師：晴晴 🥦</h3>
@@ -1152,7 +1248,7 @@ ${currentInput}
                     )}
                   </div>
 
-                  <div className="flex space-x-2">
+                  <div className="flex space-x-2 flex-shrink-0">
                     <input
                       type="text"
                       placeholder="詢問營養師任何問題... (如：下午肚子餓推薦吃什麼？)"
@@ -1376,8 +1472,8 @@ ${currentInput}
               )}
             </main>
 
-            {/* === 底部導覽列 === */}
-            <nav className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around py-2.5 px-1 z-40">
+            {/* === 底部導覽列 (使用 absolute 鎖定在視窗底端，固定 z-index 確保不遮擋且免滾動) === */}
+            <nav className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around py-2.5 px-1 z-40 flex-shrink-0">
               <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center space-y-1 text-[10px] font-bold ${activeTab === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`}><Icons.Dashboard /><span>儀表板</span></button>
               <button onClick={() => setActiveTab('food')} className={`flex flex-col items-center space-y-1 text-[10px] font-bold ${activeTab === 'food' ? 'text-emerald-600' : 'text-slate-400'}`}><Icons.Food /><span>飲食日記</span></button>
               <button onClick={() => setActiveTab('chat')} className={`flex flex-col items-center space-y-1 text-[10px] font-bold ${activeTab === 'chat' ? 'text-emerald-600' : 'text-slate-400'}`}><div className="relative"><Icons.Chat /><span className="absolute -top-1 -right-1 bg-rose-500 w-2 h-2 rounded-full"></span></div><span>AI諮詢</span></button>
